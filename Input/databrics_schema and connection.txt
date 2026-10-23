@@ -1,0 +1,61 @@
+
+
+
+SCHEMA: tiger_data_engineering.global_superstore_gold
+=====================================================
+
+TABLE 1: tiger_data_engineering.global_superstore_gold.gold_orders
+-------------------------------------------------------------------
+Column Name          Data Type
+-----------          ---------
+row_id               bigint
+order_id             string
+order_date           timestamp
+ship_date            timestamp
+ship_mode            string
+customer_id          string
+customer_name        string
+segment              string
+city                 string
+state                string
+country              string
+postal_code          double
+market               string
+region               string
+product_id           string
+category             string
+sub_category         string
+produce_name         string
+sales                double
+quantity             bigint
+discount             double
+profit               double
+shipping_cost        double
+order_priority       string
+
+Total Columns: 24
+
+
+TABLE 2: tiger_data_engineering.global_superstore_gold.gold_people
+-------------------------------------------------------------------
+Column Name          Data Type
+-----------          ---------
+person               string
+region               string
+
+Total Columns: 2
+
+
+TABLE 3: tiger_data_engineering.global_superstore_gold.gold_returns
+--------------------------------------------------------------------
+Column Name          Data Type
+-----------          ---------
+returned             string
+order_id             string
+market               string
+
+Total Columns: 3
+
+
+
+

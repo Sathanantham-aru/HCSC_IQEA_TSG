@@ -1,0 +1,284 @@
+================================================================================
+IQEA - SELENIUM GRID ON AKS (multi-user recording) - DEVOPS HANDOVER
+================================================================================
+Prepared for : DevOps team
+Scope        : Standing up Selenium Grid + Chrome nodes on AKS so more than one
+               person can record at the same time. The app itself KEEPS running
+               on App Service - only the browser layer moves to AKS.
+Depends on   : deploy/DEVOPS_HANDOVER.txt (App Service deployment) - assumed done
+Reference    : docker-selenium Helm chart, KEDA selenium-grid scaler,
+               Azure-Samples/selenium-grid-aks-keda (Microsoft's own reference
+               for this exact stack - use it as the starting point, not a
+               from-scratch build)
+
+
+================================================================================
+WHY AKS AND NOT ANOTHER SIDECAR
+================================================================================
+App Service sidecars are static and share one network namespace - that's what
+caps today's deployment at ONE concurrent browser (see PART A2 of the original
+handover). AKS gives each Chrome pod its own network identity, so many can run
+side by side, and it can scale the node count up/down automatically with KEDA
+instead of us guessing a fixed number.
+
+App Service and AKS are separate Azure resources. For this to work, App
+Service's outbound traffic has to be able to reach a private address inside
+the AKS cluster's network - that's the main thing PART A below is about.
+
+
+================================================================================
+PART A - INFORMATION / DECISIONS WE NEED FROM YOU
+================================================================================
+
+--------------------------------------------------------------------------
+A1. [BLOCKING - REOPENED 2026-09-22] Network path from App Service to the AKS cluster
+--------------------------------------------------------------------------
+DevOps first gave us the Hub's private IP (10.224.0.6), then changed it to a
+public LoadBalancer instead: "Since AKS/Azure App Service have no VNet
+configuration, I changed the private IP 10.224.0.6 to load balancer
+(public)." Understood why - without VNet integration/peering the private IP
+is simply unreachable from App Service - but this reopens the ONE hard rule
+from the original ask:
+
+    The Grid Hub must NEVER get a public IP or public ingress. It is a live,
+    drivable browser sitting on your network - anyone who can reach it can
+    drive it with no further auth. Internal only.
+
+Selenium's WebDriver API on port 4444 has NO authentication of its own - the
+VNC password only protects the screen VIEW, not session creation. A public,
+unrestricted LB on 4444 lets anyone who finds the IP open a Chrome session on
+our cluster: drive it to internal URLs, harvest whatever cookies/tokens land
+in it, or just consume node capacity. This is not acceptable as a resting
+state, even short-term.
+
+Ask, before we wire GRID_UPSTREAM / SELENIUM_REMOTE_URL to the new public
+address: restrict the LoadBalancer Service's source IP ranges (Kubernetes
+`spec.loadBalancerSourceRanges`, or an NSG on the LB's public IP) to ONLY
+App Service's outbound IP addresses (`az webapp show --query
+outboundIpAddresses` on our side - happy to hand you the exact list). That
+gets us working connectivity without needing VNet integration/peering AT ALL,
+while keeping the Hub closed to everyone else on the internet.
+
+Once that's in place, please send us:
+  - The LoadBalancer's public IP or DNS name
+  - Confirmation that loadBalancerSourceRanges/NSG is scoped to our outbound
+    IPs only (not 0.0.0.0/0)
+
+Original two options (VNet Integration + peering, or shared-VNet + NSG) are
+still on the table if a private path becomes available later - the source-IP
+restriction above is the fast, unblocking path in the meantime, not a
+replacement for proper network isolation long-term.
+
+
+--------------------------------------------------------------------------
+A2. [RESOLVED 2026-09-21] Deployment method - raw manifests, no Helm
+--------------------------------------------------------------------------
+DevOps confirmed Helm is not installed on this cluster and installing it is
+its own request. Agreed: skip Helm, deploy plain Deployment/Service YAML
+instead. No functional loss for a fixed-capacity setup - see
+deploy/k8s/selenium-grid.yaml, ready to `kubectl apply -f`.
+
+Namespace used: `selenium-grid` (dedicated, so it can carry its own resource
+quota / NetworkPolicy separate from other workloads on the cluster).
+
+Still needed from you: fill in the placeholders in that file (VNC password,
+optionally a reserved private IP / subnet name for the internal LB), and
+confirm the namespace is acceptable.
+
+
+--------------------------------------------------------------------------
+A3. [DECISION] Chrome node pool sizing and isolation
+--------------------------------------------------------------------------
+Each Chrome node is one concurrent recording session (SE_NODE_MAX_SESSIONS
+stays at 1 - two sessions sharing one X display means users can see and click
+each other's browser).
+
+  - How many concurrent recorders should we plan for at launch? (This sets
+    chromeNode.replicas and, more importantly, the KEDA maxReplicaCount in A5.)
+  - Per pod: request ~1 vCPU / 2Gi memory. Kubernetes has no --shm-size flag
+    like Docker - Chrome needs an emptyDir volume mounted at /dev/shm with
+    medium: Memory and a 2Gi sizeLimit, or it crashes on heavy pages with the
+    same "session not created: Chrome instance exited" error from the App
+    Service days. The chart supports this via chromeNode.extraVolumes /
+    extraVolumeMounts - happy to hand you the exact values.yaml block.
+  - Recommend a DEDICATED node pool (with a taint) for these pods, so a burst
+    of Chrome sessions doesn't starve other workloads on the cluster, and so
+    cluster autoscaler can scale that pool independently.
+  - Does the target node pool have cluster-autoscaler enabled? If KEDA scales
+    the pod count up but there's no node capacity, pods sit Pending instead
+    of starting - this is the single most common way this setup silently
+    fails to scale.
+
+
+--------------------------------------------------------------------------
+A4. [RESOLVED 2026-09-22] The live-session VNC URL - same ask as the App Service phase
+--------------------------------------------------------------------------
+Answered a different way than expected, and better: rather than clicking
+through Grid's own UI, DevOps ran
+
+    kubectl exec -it deployment/chrome-node -n selenium-grid -- \
+        curl -s http://selenium-hub:4444/status
+
+which returns each active session's capabilities directly, including:
+
+    "se:vnc": "ws://<node-ip>:4444/session/<session_id>/se/vnc"
+
+Selenium Grid 4 forwards `/session/<id>/se/...` sub-routes through the HUB by
+session id to whichever node actually owns it, so hitting this same path
+against the Hub's address (not the node IP in the capability, which is a pod
+IP and not reachable from outside the cluster) routes correctly regardless of
+which node a given session landed on.
+
+Done on the app side: `utilities/browser_factory.py :: get_novnc_url()` now
+builds `path=session/<driver.session_id>/se/vnc` per user instead of a fixed
+path, and the noVNC HTML/JS client itself is vendored into our own image
+(`deploy/Dockerfile`, served locally by nginx at `/vnc/`) rather than proxied
+from a Chrome node's port 7900 - node pod IPs aren't reachable from outside
+the cluster. See deploy/nginx.conf.template's `/session/` location, which
+already proxies to GRID_UPSTREAM (the Hub) for exactly this.
+
+Confirms the observed symptom from 2026-09-22 (two users opening "Open
+Browser" in separate tabs both landed on the same feed) was this exact gap,
+not a new bug - `get_novnc_url()` was still returning a fixed relative path
+until this change.
+
+Still needed from you: NSG confirmation for A1 (port 4444 open from the App
+Service subnet to 10.224.0.6), so this can actually be exercised end to end.
+
+
+--------------------------------------------------------------------------
+A5. [DEFERRED 2026-09-21] KEDA - not installed; needs its own request
+--------------------------------------------------------------------------
+DevOps confirmed KEDA is not on this cluster and installing it (it needs
+cluster-admin - adds CRDs) is a separate change request from this one.
+
+Agreed: ship WITHOUT autoscaling for now. chrome-node.spec.replicas in
+deploy/k8s/selenium-grid.yaml is a FIXED number (currently 5, edit as
+decided in A3). Raising capacity later means editing that number and
+re-applying, or `kubectl scale deployment/chrome-node --replicas=N -n
+selenium-grid` - same "pick a number, we show a busy message at the ceiling"
+trade-off already accepted for the App Service POC, just with a real number
+instead of 1.
+
+If concurrency needs outgrow a fixed number later, KEDA's selenium-grid
+scaler (scaling off the Hub's pending-session queue, per
+Azure-Samples/selenium-grid-aks-keda) is the follow-up ask - raise it as its
+own request once there's a fixed deployment to point it at, rather than
+bundling it with this one.
+
+
+--------------------------------------------------------------------------
+A6. [NEEDED] Image pulls
+--------------------------------------------------------------------------
+selenium/hub and selenium/node-chrome are pulled from Docker Hub by default.
+Two questions:
+  - Is Docker Hub reachable from this cluster's egress policy, or does it need
+    to go through an allowlist / firewall rule?
+  - Given Docker Hub's pull-rate limits, do you want these images mirrored
+    into your ACR (same registry the app image already lives in) instead of
+    pulling from Docker Hub directly on every pod restart / scale event?
+    We'd recommend mirroring if the cluster has any meaningful pod churn.
+
+
+--------------------------------------------------------------------------
+A7. [NEEDED] VNC password as a cluster secret
+--------------------------------------------------------------------------
+SE_VNC_PASSWORD needs to be a Kubernetes Secret injected into the Chrome node
+pods, not a plaintext value in a committed values.yaml (same rule as the
+placeholder we already flagged in docker-compose.yml - please don't reuse
+that placeholder value here either).
+
+
+--------------------------------------------------------------------------
+A8. [ANSWERED 2026-09-22 - NOT PROCEEDING] Proposed "browser slot" model
+--------------------------------------------------------------------------
+Answers to the three questions below: (1) no, the 5 replicas are not tagged
+with any stereotype; (2) no, there is no safe way to assign a slot per user
+through a process env var; (3) no, this was not meant to replace A4.
+
+Given that, we are NOT merging the browser-slot snippet. All three
+prerequisites it depends on are absent, and it does not replace the routing
+it would otherwise duplicate - there is no remaining reason to adopt it. The
+existing session-id-based design from A4 (get_novnc_url() keyed on
+driver.session_id, proxied through the Hub's /session/<id>/se/vnc, vendored
+noVNC client) stays as the one routing mechanism. It already gives every
+concurrent user their own screen without any per-node tagging or app-side
+slot bookkeeping - that was the point of using Grid's own dynamic routing
+instead of an app-managed pool in the first place.
+
+If there was a specific problem on your end that the slot model was meant to
+solve (e.g. the public LoadBalancer not routing /session/<id>/se/vnc
+correctly), please tell us what broke rather than the workaround - we'd
+rather fix the real gap in the session-based path than maintain a second,
+incomplete routing mechanism alongside it.
+
+Original questions asked, for reference:
+DevOps sent us a proposed rewrite of get_driver()/get_novnc_url() that moves
+away from Grid's dynamic "any free node, proxied by session id" routing (A4)
+to NAMED, PINNED nodes: the app requests a specific node via a custom
+capability (iqea:browserSlot = "browser-1", "browser-2", ...), matched against
+each node's own advertised stereotype, and get_novnc_url() builds a static
+per-slot path (e.g. /browser-1/vnc.html) instead of a session-scoped one.
+
+We think we understand the motivation - a static, individually-addressable
+path per node is easier to route through a plain L4 LoadBalancer than a
+dynamic /session/<id>/se/vnc path - but before we merge this, three things
+need answers:
+
+  1. Node-side config: deploy/k8s/selenium-grid.yaml today has ONE Deployment
+     with 5 IDENTICAL, anonymous chrome-node replicas - none declare
+     SE_NODE_STEREOTYPE with iqea:browserSlot. Is that already set up on your
+     side another way, or does this need 5 separate Deployments/Services
+     (or a StatefulSet) with distinct stereotypes, one per slot?
+
+  2. Slot ASSIGNMENT across concurrent users: the snippet reads the slot from
+     IQEA_BROWSER_SLOT, a process environment variable defaulting to
+     "browser-1" - but the app is one Streamlit process serving every
+     concurrent user, so an env var cannot differ per request. As given,
+     every simultaneous user would default to the SAME slot and collide on
+     the SAME Selenium session - reintroducing the exact overlap problem
+     this whole effort is fixing, just one layer lower. Is there a slot-
+     assignment mechanism on your side we're missing, or does the app need
+     to own a small per-request slot allocator (5 slots, one per node)?
+
+  3. Is this meant to fully REPLACE the session-id-based routing from A4, or
+     run alongside it? If it replaces it, the vendored-noVNC + /session/
+     nginx proxying we just built for A4 becomes dead code we should remove
+     rather than maintain alongside a second mechanism.
+
+Only 2 allowed_slots ("browser-1"/"browser-2") were in the snippet against 5
+actual nodes - assuming that is just a partial example and not an intended
+cut to 2 concurrent seats, but flagging it in case it is deliberate.
+
+
+================================================================================
+PART B - WHAT WE (APP SIDE) STILL OWE YOU
+================================================================================
+[x] The get_novnc_url() code change - done 2026-09-22, see A4.
+[ ] SELENIUM_REMOTE_URL / GRID_UPSTREAM updated to point at the Hub's address,
+    as an App Service application setting (no rebuild needed - these are read
+    from the process environment). DELIBERATELY NOT DONE YET: the address
+    changed from a private IP to a public LoadBalancer (A1, reopened) with no
+    source-IP restriction confirmed. Wiring the app to an open, unauthenticated
+    Selenium Hub before that restriction is in place is a real exposure, not
+    just an ordering nicety - it currently still points at 127.0.0.1:4444.
+[ ] A "recording session busy" message wired to the Grid's actual queue depth
+    rather than a hard-coded number, once maxReplicaCount is scaling
+
+
+================================================================================
+SUMMARY
+================================================================================
+Blocked on     : A1, reopened - the Hub is now on a public LoadBalancer with
+                 no confirmed source-IP restriction. Need
+                 loadBalancerSourceRanges/NSG scoped to App Service's outbound
+                 IPs before we wire GRID_UPSTREAM/SELENIUM_REMOTE_URL to it.
+                 The app code change (A4) and the deployment approach (A2)
+                 are done and not affected by this.
+Best first step: Lock down the LB's source IP ranges to App Service's
+                 outbound IPs, send us the resulting public IP/DNS name, and
+                 we flip SELENIUM_REMOTE_URL/GRID_UPSTREAM the same day.
+Not in scope   : Anything already covered in deploy/DEVOPS_HANDOVER.txt
+                 (App Service settings, secrets, database) - that work
+                 stands as-is; this document only adds the Grid layer.
+================================================================================

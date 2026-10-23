@@ -1,0 +1,390 @@
+
+-------------file- prompttemplate--------------
+You are an expert Power BI QA Test Case Generator. Your task is to generate a maximum number of realistic, comprehensive **manual test cases to validate a Power BI report**, covering both **Functional** and **UI** aspects, organized **page by page**.
+
+You are given the report requirements as text, and (when available) one or more **wireframe images attached directly to this message**. Study every attached wireframe image visually to understand each page's layout — which visuals are present, what type each visual is (Card/KPI, Clustered/Stacked Bar, Column, Line, Dual-Axis Line, Area, Pie/Donut, Table, Matrix, Treemap, Scatter, Map, Gauge, Slicer, etc.), and where each visual is positioned on the canvas (top/bottom, left/right, header band, side panel).
+
+### Input
+**Extracted Requirement (Text):**
+ARCHITECTURE MIGRATION DOCUMENT Global Superstore Executive Dashboard Technical Replication Specifications for Looker Tableau Page 1 of 81 Data Model Architecture To successfully replicate this Power BI dashboard in Looker via LookML or Tableau the underlying dataset must be modeled as a Star Schema The relationships ensure cross filtering works accurately without duplicating financial metrics TABLE NAMETYPEPRIMARY KEY FOREIGN KEYDESCRIPTION Orders Fact Table ORDER_ID REGIONThe central transactional table containing granular line item sales data revenue profit shipping details and product dimensions PeopleDimension TableREGION Joins to Orders REGION Look up table mapping sales managers PERSON to their respective operating territories ReturnsFact Event TableORDER_ID Joins to Orders ORDER_ID Contains a list of orders that were returned Used for semi join counting to calculate return rates against total sales 2 Global KPI Metrics Formulas These are the calculated metrics Measures required for the dashboard Below are their logical definitions for recreation in Tableau Calculated Fields or Looker type measure blocks METRIC NAME FORMAT LOGICAL DEFINITION SQL DAX EQUIVALENT Total SalesCurrency M K SUM Orders SALES Total Profit Currency K SUM Orders PROFIT Profit Margin Percentage 2 Dec SUM Orders PROFIT SUM Orders SALES Page 2 of 8METRIC NAME FORMAT LOGICAL DEFINITION SQL DAX EQUIVALENT Total Orders Integer K COUNT DISTINCT Orders ORDER_ID Total CustomersInteger K COUNT DISTINCT Orders CUSTOMER_ID Return Rate Percentage 2 Dec COUNT DISTINCT Returns ORDER_ID COUNT DISTINCT Orders ORDER_ID Requires filtering to Orders present in Returns table Page 3 of 83 Page 1 Summary Dashboard The Summary page provides high level executive insights plotting macro trends across time geography and broad product categories All visuals interact via cross filtering 1 Executive KPI Banner Chart Type Multi row Card Big Number KPIs Metrics Included Total Sales Total Profit Profit Margin Total Orders Total Customers Return Rate Formatting Note Metrics are displayed horizontally across the top with descriptive subtitles 2 Total Sales and Total Profit by Year and Quarter Chart Type Dual Axis Line Chart X Axis Time ORDER_DATE Year Quarter Y Axis Left Total Sales Light Blue Line Y Axis Right Total Profit Dark Blue Line Interaction Clicking a data point filters the rest of the page to that specific quarter Page 4 of 83 Total Sales by MARKET Chart Type Horizontal Bar Chart Y Axis Rows MARKET e g APAC EU US X Axis Length Total Sales Sort Descending by Total Sales 4 Total Sales by CATEGORY and SUB_CATEGORY Chart Type Treemap Grouping Level 1 CATEGORY Technology Furniture Office Supplies Grouping Level 2 SUB_CATEGORY Phones Chairs Binders etc Size Value Total Sales 5 Total Sales by SEGMENT Chart Type Donut Chart Slices Color SEGMENT Consumer Corporate Home Office Angle Value Total Sales Labels Category Data Value Percentage e g 2 50M 51 34 Page 5 of 84 Page 2 Sales Operations This page provides detailed operational insights for managers It features advanced DAX filtering Top Bottom products and strategic scatter plotting for risk analysis Page Level Filters On Page Slicers REGION Dropdown SEGMENT Dropdown ORDER_DATE Range Slider 1 Extreme Performers Top 5 Bottom 5 Products Chart Type Clustered Bar Chart Y Axis PRODUCE_NAME X Axis Total Sales Advanced Configuration The Missing Middle This chart hides average products In Tableau this requires two sets Top 5 Set Bottom 5 Set combined In Looker requires a custom derived table ranking Power BI DAX equivalent used Top 5 and Bottom 5 Filter IF ISBLANK Total Sales Total Sales 0 0 VAR RankTop RANKX FILTER ALLSELECTED Orders PRODUCE_NAME Total Sales 0 Total Sales DESC VAR RankBottom RANKX FILTER ALLSELECTED Orders PRODUCE_NAME Total Sales 0 Total Sales ASC RETURN IF RankTop 5 RankBottom 5 1 0 Color Rule Top 5 Dark Blue Bottom 5 Warning Red Page 6 of 82 Sub Category Strategic Quadrant Chart Type Scatter Plot X Axis Return Rate Risk metric Y Axis Profit Margin Health metric Detail Bubble SUB_CATEGORY Bubble Size Total Sales Analytics Lines X Axis Constant Line at average Return Rate Y Axis Constant Line at average Profit Margin Creates 4 strategic quadrants 3 Manager Operations Scorecard Chart Type Data Matrix Pivot Table Rows REGION Hierarchy expands to People PERSON Columns Values Total Sales Total Orders Return Rate Conditional Formatting Total Sales features light blue background Data Bars Return Rate features font color warnings Red for high rates Page 7 of 84 Operational Flow Charts Bottom Center Right Chart A Total Sales by Year and SEGMENT Type Stacked Column Chart X Axis ORDER_DATE Year Y Axis Total Sales Legend Stack SEGMENT Chart B Total Orders by SHIP_MODE Type Donut Chart Color SHIP_MODE Value Total Orders Page 8 of 8
+
+**Wireframe OCR / Text Fallback (Optional — may be empty; ALWAYS prefer the attached image over this):**
+
+Wireframe: powerbi_wireframe.png
+Extracted Details:
+1. PAGE
+- Visible page navigation: "2 of 2" (page selector with left/right arrows).
+- Footer text: "Microsoft Power BI".
+- No explicit page/report title text is visible elsewhere on the image.
+
+2. VISUALS
+- Visual: "Top 10 Total Sales by PRODUCE_NAME"
+  - Type: Horizontal Bar Chart
+  - Position: Top-left
+- Visual: "SUB_CATEGORY" (legend heading shown above)
+  - Type: Scatter chart (bubble chart)
+  - Position: Top-right
+- Visual: Matrix/Table with heading "REGION" (header on top-left of the matrix)
+  - Type: Table / Matrix
+  - Position: Middle-left (below the Top 10 bar chart)
+- Visual: "Total Sales by Year and SEGMENT"
+  - Type: Stacked Column Chart
+  - Position: Middle-centre
+- Visual: "Total Orders by SHIP_MODE"
+  - Type: Donut Chart (pie/donut)
+  - Position: Middle-right
+- Visual/UI: Slicers / Date range controls (see SLICERS & FILTERS)
+  - Position: Top row (left and centre and right)
+
+3. KPI / MEASURES (every metric label shown, with displayed value and format exactly as rendered)
+- In Matrix/Table (REGION):
+  - Row "North Asia": Total Sales = $848,309.78 (currency), Total Orders = 1150 (number), Return Rate % = 13.83 % (percentage with space before %)
+  - Row "West": Total Sales = $725,457.82, Total Orders = 1611, Return Rate % = 11.73 %
+  - Row "North": Total Sales = $1,248,165.60, Total Orders = 2356, Return Rate % = 10.02 %
+  - Row "Central": Total Sales = $2,822,302.52, Total Orders = 5249, Return Rate % = 4.80 %
+  - Row "South": Total Sales = $1,600,907.04, Total Orders = 3270, Return Rate % = 4.10 %
+  - Row "Southeast Asia": Total Sales = $884,423.17, Total Orders = 1517, Return Rate % = 3.63 %
+  - Row "Oceania": Total Sales = $1,100,184.61, Total Orders = 1744, Return Rate % = 3.33 %
+  - Row "East": Total Sales = $678,781.24, Total Orders = 1401, Return Rate % = 3.21 %
+  - Row "Caribbean": Total Sales = $324,280.86, Total Orders = 855, Return Rate % = 2.92 %
+  - Row "Central Asia": Total Sales = $752,826.57, Total Orders = 1026, Return Rate % = 2.34 %
+  - Row "Africa": Total Sales = $783,773.21, Total Orders = 2232, Return Rate % = 2.29 %
+  - Row "Canada": Total Sales = $66,928.17, Total Orders = 201, Return Rate % = 2.00 %
+  - Row "EMEA": Total Sales = $806,161.31, Total Orders = 2462, Return Rate % = (unclear) [value visible in row but partially obscured; percentage digits unclear]
+  - Total row: "Total" Total Sales = $12,642,501.91 (currency), Total Orders = 25035 (number), Return Rate % = 4.68 % (percentage with space before %)
+- In Donut Chart (Total Orders by SHIP_MODE):
+  - Segment label / callouts visible on chart:
+    - "15K (59.57%)" (value + percentage)
+    - "5K (20.12%)"
+    - "4K (5.29%)"
+    - "1K" (value visible; associated percentage not legible or not shown next to this slice)
+- In Scatter Chart (SUB_CATEGORY):
+  - Two reference values/annotations shown on chart:
+    - "12.87%" (percentage text adjacent to horizontal dashed line)
+    - "6.04%" (percentage text adjacent to vertical dashed line)
+- In Top 10 Bar Chart:
+  - X-axis tick labels: "$0K", "$50K", "$100K" (currency with K)
+- In Stacked Column Chart (Total Sales by Year and SEGMENT):
+  - Y-axis tick labels visible: "$0M", "$2M", "$4M" (currency with M)
+  - X-axis category labels visible: "2011", "2012", "2013", "2014" (years)
+
+4. CHART FIELDS (axis labels, legend entries, series names, data labels and units visible)
+- Top 10 Total Sales by PRODUCE_NAME (Bar Chart)
+  - Title text: "Top 10 Total Sales by PRODUCE_NAME"
+  - Y-axis label: "PRODUCE_NAME" (vertical category axis)
+  - X-axis label: "Total Sales"
+  - X-axis tick/units shown: "$0K", "$50K", "$100K"
+  - Category (items shown, truncated with ellipses exactly as rendered):
+    - "Apple Smart Phone, Full ..."
+    - "Cisco Smart Phone, Full S..."
+    - "Motorola Smart Phone, F..."
+    - "Nokia Smart Phone, Full..."
+    - "Canon imageCLASS 2200..."
+    - "Hon Executive Leather Ar..."
+    - "Office Star Executive Leat..."
+    - "Harbour Creations Execu..."
+    - "Samsung Smart Phone, C..."
+    - "Nokia Smart Phone, with..."
+- SUB_CATEGORY (Scatter / Bubble Chart)
+  - Title: "SUB_CATEGORY"
+  - X-axis label: "Return Rate %"
+  - Y-axis label: "Profit Margin"
+  - Legend entries (visible, left-to-right):
+    - "Accessories"
+    - "Appliances"
+    - "Art"
+    - "Binders"
+    - "Bookcases"
+    - "Chairs"
+    - "Copiers"
+  - There is a legend overflow/scroll indicator on the right of the legend (right chevron), indicating more categories not fully visible.
+  - Reference / constant lines visible on plot:
+    - Horizontal dashed line with label "12.87%"
+    - Vertical dashed line with label "6.04%"
+  - Gridlines and approximate y-axis ticks visible including "20%" at top and "-10%" at bottom (other intermediate ticks present but small/unclear)
+- Total Sales by Year and SEGMENT (Stacked Column)
+  - Title: "Total Sales by Year and SEGMENT"
+  - Legend header: "SEGMENT"
+  - Legend entries (left-to-right, with color dots):
+    - "Consumer"
+    - "Corporate"
+    - "Home Office"
+  - X-axis label: "Year"
+  - X-axis categories: "2011", "2012", "2013", "2014"
+  - Y-axis label: "Total Sales"
+  - Y-axis ticks: "$0M", "$2M", "$4M" visible
+- Total Orders by SHIP_MODE (Donut)
+  - Title: "Total Orders by SHIP_MODE"
+  - Legend header: "SHIP_MODE"
+  - Legend entries (with colors visible):
+    - "Standard Class" (purple)
+    - "Second Class" (peach)
+    - "First Class" (light blue)
+    - "Same Day" (dark blue)
+  - Data callouts on donut: "15K (59.57%)", "5K (20.12%)", "4K (5.29%)", "1K" (see KPI/MEASURES)
+  - Percentages shown with parentheses in the callout labels for three slices
+
+5. TABLE/MATRIX
+- Matrix header row / column headers visible:
+  - Column 1 header: (implicit grouping) "REGION" shown as the leftmost column header area
+  - Column 2 header: "Total Sales"
+  - Column 3 header: "Total Orders"
+  - Column 4 header: "Return Rate %"
+- Row groupings / rows (exact row labels visible, top-to-bottom):
+  - "North Asia"
+  - "West"
+  - "North"
+  - "Central"
+  - "South"
+  - "Southeast Asia"
+  - "Oceania"
+  - "East"
+  - "Caribbean"
+  - "Central Asia"
+  - "Africa"
+  - "Canada"
+  - "EMEA"
+- Totals/subtotals:
+  - Bottom total row labeled "Total"
+  - Total row values: Total Sales = $12,642,501.91, Total Orders = 25035, Return Rate % = 4.68 %
+- Additional table features visible:
+  - A small horizontal bar sparkline/inline bar is present in the "Total Sales" column cells (purple bars) representing magnitude.
+  - A sort indicator (small up/down arrow) is visible aligned with the "Return Rate %" column header indicating sorting on that column.
+
+6. SLICERS & FILTERS
+- Slicer: "REGION"
+  - Control type: Dropdown (single-select dropdown control with a downward chevron)
+  - Selected value: "All" (text displayed)
+  - Position: Top-left
+- Slicer: "SEGMENT"
+  - Control type: Dropdown (single-select dropdown control with a downward chevron)
+  - Selected value: "All"
+  - Position: Top-centre (to the right of Region slicer)
+- Slicer: "ORDER DATE"
+  - Control type: Date range control with two date pickers plus a range slider
+  - Left date picker value: "1/1/2011"
+  - Right date picker value: "12/31/2014"
+  - A horizontal range slider is visible beneath the pickers showing the selected interval (black/grey selection bar across a timeline).
+  - Position: Top-right, label text "ORDER DATE" shown above the slider/pickers.
+
+7. INTERACTIONS & NAVIGATION
+- Page navigation controls at bottom center: left arrow, right arrow with text "2 of 2".
+- Zoom/scale control at bottom-right: shows "84%" (zoom level). A small slider or zoom control is visible near it.
+- Small icon(s) at bottom-right corner: an expand/focus icon and another small icon (unclear). (Mark as '(unclear)' for exact function)
+- Legend in scatter chart shows a right chevron indicating additional legend items accessible (interaction hint).
+- Sort indicator on "Return Rate %" column header (implies header click sorting interaction).
+- No explicit drill-down drill-up icons are visible on the charts (no down-arrow expand icons are clearly shown).
+- No explicit export or bookmark icons are clearly visible on the top or visuals (not visible in the image).
+- Tooltips: not shown explicitly in the static image (no tooltip pop-up visible).
+
+8. LAYOUT NOTES
+- Page is arranged in three main columns horizontally:
+  - Left column (top): "Top 10 Total Sales by PRODUCE_NAME" bar chart; (below) REGION matrix/table.
+  - Centre column (top): empty area between left bar chart and right scatter; (middle/centre) "Total Sales by Year and SEGMENT" stacked column chart.
+  - Right column (top): "SUB_CATEGORY" scatter; (middle/right) "Total Orders by SHIP_MODE" donut chart.
+- Headers/labels:
+  - Each visual has a bold title text as indicated (exact wording captured in VISUALS/CHART FIELDS).
+- Color-coding & conditional formatting:
+  - Bar chart uses a dark-blue to red color gradient for bars (visual ranking/color ramp visible).
+  - Matrix "Total Sales" cells contain purple inline bars (sparklines or data bars).
+  - Donut and charts use consistent category color palette (legend colors visible).
+  - Scatter chart uses colored bubbles by SUB_CATEGORY with bubble size varying (bubble sizes visible).
+  - Reference lines on scatter are blue dashed lines (horizontal and vertical).
+- Sorting indicator present on the matrix "Return Rate %" header (small arrow).
+
+9. DATA OBSERVATIONS
+- Date range/filter in report is set to 1/1/2011 through 12/31/2014 (ORDER DATE slicer).
+- Yearly aggregation is shown in "Total Sales by Year and SEGMENT" for years 2011, 2012, 2013, 2014.
+- The bar chart explicitly states "Top 10" in its title, implying it is filtered to top 10 items by "Total Sales".
+- Return rates and profit margins are expressed as percentages (e.g., "Return Rate %", "Profit Margin") and shown in charts and table.
+- The matrix shows a grand total row labeled "Total" for the displayed columns.
+- No textual disclaimers or footnotes are visible on the page beyond the "Microsoft Power BI" footer text.
+- Some text is truncated with ellipses in product labels (e.g., "Apple Smart Phone, Full ...") — full product names are not visible.
+- Some elements are partially obscured or too small to read exactly:
+  - The "EMEA" row's "Return Rate %" value is not fully legible (marked above as '(unclear)').
+  - A small percentage on the smallest donut slice (1K) is not legible or not shown next to that slice.
+  - A small icon near the bottom-right is present but its function is unclear (marked '(unclear)').
+
+Notes about unclear items: where text/values are unreadable or partially obscured, the term "(unclear)" has been used rather than guessing.
+
+Wireframe: powwrbi_1.png
+Extracted Details:
+1. PAGE
+- No explicit page/report title visible on the page.
+- Page navigation indicator visible at bottom-centre: "1 of 2" with left and right arrows (indicates multiple pages but no page/tab names are shown).
+- Application branding visible bottom-left: "Microsoft Power BI".
+
+2. VISUALS
+- Top row (six cards), top-left to top-right:
+  - Card 1: visual title (below value) "Total Sales" — visual type: card — position: top-left.
+  - Card 2: visual title "Total Orders" — visual type: card — position: top-top, slightly right of first card (top-centre-left).
+  - Card 3: visual title "Total Customers" — visual type: card — position: top-centre-right.
+  - Card 4: visual title "Total Profit" — visual type: card — position: top-centre-right-to-right.
+  - Card 5: visual title "Profit Margin" — visual type: card — position: top-right (left of last).
+  - Card 6: visual title "Return Rate %" — visual type: card — position: top-right.
+- Large line chart panel (left of header area under cards):
+  - Visual title: "Total Sales and Total Profit by Year and Quarter" — visual type: line chart (dual-axis) — position: upper-left / middle-left.
+- Horizontal bar chart (right of line chart):
+  - Visual title: "Total Sales by MARKET" — visual type: horizontal bar chart — position: upper-right / top-centre-right.
+- Treemap (bottom-left area):
+  - Visual title: "Total Sales by CATEGORY and SUB_CATEGORY" — visual type: treemap — position: middle-left / bottom-left.
+- Donut chart (bottom-right area):
+  - Visual title: "Total Sales by SEGMENT" — visual type: donut (pie/donut) chart — position: middle-right / bottom-right.
+- Report chrome / controls:
+  - Page navigation control (bottom-centre): "1 of 2" with left/right arrows.
+  - Zoom slider and percentage indicator at bottom-right: slider with plus/minus and "84%".
+  - Small icons at bottom-right (zoom/fit/expand/focus) and a small icon near bottom-right that appears to be a share/expand control (icons visible but unlabeled).
+
+3. KPI / MEASURES (exact text and formatting as rendered)
+- "$12.64M" — label below: "Total Sales" — format: currency with suffix "M" (rendered as $12.64M).
+- "25K" — label below: "Total Orders" — format: number with suffix "K".
+- "2K" — label below: "Total Customers" — format: number with suffix "K".
+- "$1.47M" — label below: "Total Profit" — format: currency with suffix "M".
+- "11.61%" — label below: "Profit Margin" — format: percentage with no space before %.
+- "4.68 %" — label below: "Return Rate %" — format: percentage with a space before % (rendered exactly as "4.68 %").
+
+4. CHART FIELDS
+- Line chart "Total Sales and Total Profit by Year and Quarter":
+  - Legend entries (top-right of chart area): "Total Sales" (blue marker/dot) and "Total Profit" (dark blue marker/dot).
+  - X-axis: repeated quarter labels "Qtr 1", "Qtr 2", "Qtr 3", "Qtr 4" grouped under year labels "2011", "2012", "2013", "2014" (year labels shown under grouped quarters).
+  - Left Y-axis label: "Total Sales" with tick labels shown as "$0M" and "$1M" (and intermediate grid lines visible).
+  - Right Y-axis label (or secondary axis): "Total Profit" with tick labels shown as "$0.0M", "$0.1M", "$0.2M" (values visible along right side of chart).
+  - Visual shows two series plotted as lines with markers; quarter group backgrounds are color-shaded by year (alternating pale shaded vertical bands).
+  - No data point numeric labels shown on the lines (only legend and axes).
+- Bar chart "Total Sales by MARKET":
+  - Y-axis (category axis): market names listed from top to bottom: "APAC", "EU", "US", "LATAM", "EMEA", "Africa", "Canada".
+  - X-axis (value axis) tick labels: "$0M", "$1M", "$2M", "$3M", "$4M".
+  - No legend visible; bars are blue filled. No numeric labels on bars (only axis ticks).
+- Treemap "Total Sales by CATEGORY and SUB_CATEGORY":
+  - Treemap tiles show category and sub-category labels (no axes). Visible labels include:
+    - "Technology" with sublabels (tiles) "Phones", "Copiers", "Machines", "Accessories".
+    - "Furniture" with sublabels "Chairs", "Bookcases", "Tables", "Furnishings".
+    - "Office Supplies" with sublabels "Storage", "Appliances", "Binders", "Paper", "Art", truncated labels "Sup..." and "Envel..." (rendered exactly as truncated text).
+  - No numeric labels visible on tiles in the image (no values or percentages shown inside tiles).
+- Donut chart "Total Sales by SEGMENT":
+  - Legend (to the right of donut) title: "SEGMENT" with three legend entries and colored bullets:
+    - Blue bullet — "Consumer"
+    - Dark blue bullet — "Corporate"
+    - Purple bullet — "Home Office"
+  - Donut contains three labeled segments with values and percentages shown near segments:
+    - "$6.51M (51.48%)"
+    - "$3.82M (30.25%)"
+    - "$2.31M (18.27%)"
+  - No axis labels (pie/donut).
+
+5. TABLE/MATRIX
+- None visible on the page (no table or matrix control shown).
+
+6. SLICERS & FILTERS
+- No slicer or filter control visible on the report canvas.
+- Page navigation control at bottom-centre: "1 of 2" with left and right arrows (not a data filter but navigation).
+- Zoom control at bottom-right (slider with plus/minus and displayed "84%") — not a data filter.
+
+7. INTERACTIONS & NAVIGATION
+- Page number/navigation: "1 of 2" with left and right arrows (bottom-centre).
+- Zoom control: slider with minus and plus buttons and percentage "84%" (bottom-right).
+- Small icons at bottom-right: an expand/focus icon (square with arrow) and an unlabeled small icon (appears to be share/expand/export) — icons visible but no descriptive text.
+- No visible drill-down icons, drill-up arrows, drill-through labels, bookmarks, or explicit tooltip text shown.
+- No visible cross-filtering hints or selection states shown on visuals.
+
+8. LAYOUT NOTES
+- Visual grouping:
+  - Top row contains six equal-height KPI/cards spanning full width.
+  - Second row left: large line chart occupying roughly left two-thirds; second row right: horizontal bar chart occupying right one-third.
+  - Bottom row left: treemap occupying left two-thirds; bottom row right: donut occupying right one-third.
+- Each visual has a title in uppercase style matching the image (e.g., "Total Sales by MARKET", "Total Sales by SEGMENT").
+- Color usage:
+  - Cards use light grey/white backgrounds with dark text.
+  - Line chart: two shades of blue for the two series; background year bands are pale tinted rectangles.
+  - Bar chart: single blue color for bars.
+  - Treemap: multiple color hues (dark blue, mid blue, purple) separating category groups.
+  - Donut: three colors used (blue, dark blue, purple) matching legend bullets.
+- No logos in header; Microsoft Power BI branding visible bottom-left outside canvas.
+- No conditional formatting indicators (RAG, up/down arrows) visible on cards or charts.
+
+9. DATA OBSERVATIONS
+- Time range / hierarchy visible on line chart: quarters by year with years visible 2011, 2012, 2013, 2014 (title explicitly: "by Year and Quarter").
+- No explicit mention of aggregation flags such as YTD, MTD, YoY on any visual.
+- No disclaimer or note text visible on the page.
+- Several treemap subcategory labels are truncated as displayed: "Sup..." and "Envel..." — capture exact visible truncation.
+- No numeric values shown on treemap tiles; donut shows absolute values with percentages and bar/chart axes show $M ticks.
+- No filters, slicers, or applied selections shown on the canvas; the presence of "1 of 2" suggests additional report page(s) not shown.
+
+
+**Navigation / Report Access Details (Optional):**
+Generate end to test cases for functional , UI all combination.
+
+---
+### STEP 0 — Build a Page-wise Visual Inventory (do this first, internally)
+
+1. **Identify every report page.** The requirements text is the source of truth for page structure — look for explicit page sections such as "Page 1: Summary Dashboard", "Page 2: Sales Operations", etc. Use the page names exactly as written in the requirements.
+2. **Attached wireframe images map to pages.** Each attached image is one report page. There may be FEWER images than pages (e.g. only Page 2 was uploaded). Use each image to confirm the visual type/position for that page. For any page that has NO attached image, you MUST still generate full coverage from the textual requirements — do not skip it.
+3. For each page, list every visual (including slicers and the KPI/card banner) with its expected type and relative position.
+
+You must generate coverage for **every visual on every page**, whether or not a wireframe image exists for that page. Do not under-cover a visual just because it lacks an image (e.g. "Total Sales by MARKET" on the Summary page).
+
+---
+### Instructions (Strict)
+
+1. **Page tagging (MANDATORY)**
+   - Prefix EVERY "Test Case Name" with the report page in square brackets, e.g. `[Page 1 - Summary Dashboard] Verify Executive KPI banner renders`.
+   - A test case must never mix visuals from two different pages. If an interaction spans pages (navigation), tag it with the page where the action starts.
+
+2. **Prerequisite / Setup Steps**
+   - Every test case must include proper prerequisites (valid workspace access, report opened, dataset refreshed, appropriate RLS role) and navigation to the correct page before the main steps.
+   - Step 1 always covers opening/navigating to the correct report page; the final step returns the page to its default state (clear filters / reset slicers) unless the case ends in an error state.
+
+3. **Per-Page Report-Load / Initial-Render Validation (MANDATORY, one per page)**
+   - For each page, add a case that verifies ALL visuals on that page render successfully on initial load — no blank/empty visuals, no persistent spinners, no load/query errors, and default slicer selections are applied.
+
+4. **Visual Presence, Type & Position Validation (MANDATORY, one+ per visual per page)**
+   - For EACH visual on each page: verify it is present, verify the visual TYPE matches the spec (e.g. MARKET = horizontal bar, SEGMENT = donut, Manager Scorecard = matrix, Strategic Quadrant = scatter), verify its POSITION matches the layout, and verify titles/axis labels/legends/data-labels/conditional formatting read as specified.
+
+5. **Slicers, Filters & Date Boundary Validation**
+   - Verify each slicer (REGION, SEGMENT, ORDER_DATE range, etc.) is present, has the correct default, and lists expected values.
+   - Verify single selection, multi-selection, "Select all", and Clear/Reset update dependent visuals correctly.
+   - **Date slicer BVA (MANDATORY):** for range date slicers, add explicit boundary cases — minimum date, maximum date, single-day selection, full-range selection, and out-of-range/invalid selection (use the exact min/max dates from the requirements or wireframe when available, e.g. 01/01/2011 to 31/12/2014).
+
+6. **Cross-Filtering / Cross-Highlighting (MANDATORY, broad coverage)**
+   - Build a cross-filter matrix: for EACH interactive visual on a page (treemap, donut, bar, matrix row, scatter bubble, stacked column, etc.), add a case that selects/clicks a data point in that visual and verifies the OTHER visuals on the page filter or highlight correctly.
+   - Do NOT settle for one or two cross-filter cases — cover every interactive visual as a filter source where the report enables interactions.
+
+7. **Filter Persistence Across Page Navigation (MANDATORY)**
+   - Add cases that set slicer/filter selections on one page, navigate to another page and back, and verify whether filter state is retained or reset per the report design. Cover both "persisted" and "reset" expectations where the spec implies them.
+
+8. **Visual Header Actions (across all major visuals)**
+   - For each major visual (Top/Bottom Products, Matrix, Scatter, Treemap, Line, MARKET bar, donuts, stacked column), verify header actions where supported: Focus Mode, "Show as a table", "Export data", and Sort options (ascending/descending on the correct field).
+
+9. **Interaction & Drill Behavior**
+   - Verify drill-down/drill-up on hierarchical visuals (e.g. Matrix REGION → PERSON), drill-through to detail pages, tooltips on hover, and sorting.
+
+10. **Data Accuracy Validation**
+    - Verify KPI/Card values, chart aggregations, table/matrix totals & subtotals, and Return Rate/Profit Margin calculations match the requirements. Verify number/date/currency/percentage formatting.
+
+11. **Negative & Operational Failure Scenarios (MANDATORY)**
+    - Cover dataset refresh failure, individual visual rendering failure, query timeout behavior, empty/no-data result state for a filter combination, and permission/RLS-restricted access. Verify graceful error messaging in each case.
+
+12. **Testing Techniques**
+    - Apply BVA (slicer ranges/dates), Equivalence Partitioning, Decision Table, and State Transition where they add value.
+
+### Output Format (Strict)
+- Output strictly as a **Markdown table** with exactly these 7 columns, this header, in this order:
+
+| Test Case Name | Step Number | Test Step Description | Test Step Expected Result | Status | Type | Category
+   - **Test Case Name** = page-prefixed name (see rule 1). Repeat the FULL test case name on every step row of that test case.
+   - **Step Number** = a SINGLE integer for that one row (1, then 2, then 3 ...). Put exactly ONE step per row. Do **NOT** use ranges like "1..3", "1-5", or collapse multiple steps into one row.
+   - **Status** = "New"
+   - **Type** = "Manual"
+   - **Category** = the single best fit: "Positive" / "Negative" / "Workflow" / "Edge case" / "UI" / "Visual" / "Filter" / "Cross-Filter" / "Navigation" / "Load" / "Data Accuracy".
+- Do **NOT** include explanations, code fences (like ```markdown), "Note:", or any text outside the table — EXCEPT the Coverage Summary section described below.
+
+### Coverage Summary (Required)
+After the table, append a section titled exactly:
+
+## Coverage Summary
+
+List, in concise bullet points, the scenarios already covered, **grouped by page and then by visual/category** (e.g. "Page 1 - Summary → MARKET bar: presence, sort, tooltip, cross-filter"). This is used to avoid regenerating duplicates in follow-up passes — be explicit about which page+visual+category combinations are done so remaining gaps are obvious.
+
+---
+### Task
+Generate **at least 50 unique, detailed, page-tagged Power BI validation test cases** from the requirements and the attached wireframe image(s), ensuring every visual on every page is covered even when no wireframe image exists for that page. Begin now.

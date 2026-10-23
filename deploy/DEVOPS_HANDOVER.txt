@@ -1,0 +1,362 @@
+================================================================================
+IQEA - AZURE DEPLOYMENT HANDOVER
+================================================================================
+Prepared for : DevOps team
+Repo         : ai-accelerator   (branch: IQEA_refined_version)
+Target       : iqea-poc-cweseafae3a9bvgf.eastus-01.azurewebsites.net
+               Azure App Service | Linux | East US | served at root path "/"
+Status       : App Service currently STOPPED (HTTP 403 Site Disabled)
+Reference    : deploy/README.md, deploy/Dockerfile, deploy/docker-compose.yml
+
+All application-side code work is COMPLETE and verified in both local and azure
+modes. Everything below is infrastructure work owned by DevOps.
+
+
+================================================================================
+THE CORE CONSTRAINT - PLEASE READ FIRST
+================================================================================
+Interactive action recording is IQEA's primary feature, and every user needs
+their OWN browser.
+
+Chrome therefore runs HEADED on a virtual display (Xvfb) inside Selenium Grid
+nodes, and is streamed back to each user over noVNC embedded in the page.
+Headless Chrome would start cleanly but leave nothing for anyone to click,
+which defeats the entire feature.
+
+  One Grid node = one concurrent recording session.
+
+The original error you reported --
+  "session not created: Chrome instance exited"
+-- was caused by the application passing desktop-oriented Chrome flags that
+cannot work in a container. That is fixed in code. The remaining work is
+standing up the browser infrastructure.
+
+
+================================================================================
+PART A - INFORMATION WE NEED FROM YOU
+================================================================================
+
+--------------------------------------------------------------------------
+A1. [BLOCKING] Selenium Grid version, and the live-session VNC URL
+--------------------------------------------------------------------------
+Once a Grid is running, please start a session, open its live view, and send
+us the EXACT URL the browser loads.
+
+Why: Grid proxies each session's screen at a path that differs between minor
+versions. We have built against the documented shape but cannot verify it
+without a real Grid.
+
+Blocks: a one-line change in
+        utilities/browser_factory.py :: get_novnc_url()
+This is the ONLY outstanding code change in the entire project.
+
+
+--------------------------------------------------------------------------
+A2. [DECISION NEEDED] How many concurrent recording sessions?
+--------------------------------------------------------------------------
+App Service CANNOT scale browsers dynamically - sidecar containers are
+declared statically, so the node count is fixed and becomes a hard ceiling on
+simultaneous recordings.
+
+For a POC this is a reasonable trade-off: pick a number, and we will show
+users a clear "all browsers busy" message when it is reached.
+
+If recording must scale with the team, the move is Azure Container Apps -
+KEDA ships a "selenium-grid" scaler that scales nodes off the Grid's pending
+session queue. AKS works too.
+
+WE NEED THE NUMBER EITHER WAY.
+Capacity rule of thumb: ~1 GB RAM per concurrent Chrome, plus the app.
+
+
+--------------------------------------------------------------------------
+A3. [NEEDED] Confirm every application setting is present
+--------------------------------------------------------------------------
+This one bites hardest and is easy to miss.
+
+The app NO LONGER reads a .env file in Azure. Every value now comes from the
+process environment (App Service application settings). A missing variable
+does NOT fail at startup - the feature simply errors when a user tries it,
+possibly weeks later.
+
+The full inventory of all 32 variables the code reads is in PART C below.
+Please confirm each required one is configured.
+
+
+--------------------------------------------------------------------------
+A4. [NEEDED] Outbound network policy
+--------------------------------------------------------------------------
+The container must be able to reach:
+  - your Azure OpenAI endpoint   (used by almost every feature)
+  - GitHub / GitLab              (script push, self-healing commits)
+  - Jira                         (test management integration)
+
+If egress is locked down, we need to know the allowlist.
+
+
+--------------------------------------------------------------------------
+A5. [NEEDED] Persistent storage for generated artefacts
+--------------------------------------------------------------------------
+The app writes screenshots, generated test scripts and Allure results to the
+"output/" folder.
+
+Container filesystems are ephemeral - ALL of it is lost on restart or
+scale-in. Is there an Azure Files share we should mount, and at what path?
+
+This may be acceptable for a POC, but it should be a decision rather than a
+surprise.
+
+
+--------------------------------------------------------------------------
+A6. [RESOLVED 2026-09-11] Database - is it in scope?
+--------------------------------------------------------------------------
+Yes, and it is done. The application store is MySQL, with one server per
+environment selected by EXECUTION/execution_type:
+
+  local -> [DATABASE_local]  127.0.0.1/iqea
+  azure -> [DATABASE_azure]  vsmqedb.mysql.database.azure.com/iqea_azure
+
+Both databases exist with all tables, and the existing data has been migrated
+(207 rows each, verified by row count and blob byte totals). PostgreSQL is
+retired; it is referenced only by utilities/db_utils/migrate_pg_to_mysql.py.
+
+ACTION FOR DEVOPS: the Azure credentials are currently in config/settings.ini,
+which is committed to git. Move them to App Service application settings:
+
+  IQEA_DB_HOST, IQEA_DB_PORT, IQEA_DB_USER, IQEA_DB_PASSWORD, IQEA_DB_NAME
+
+These override the ini, so the committed values can then be blanked.
+
+
+ALREADY ANSWERED (no action needed)
+  - Hosting platform ....... App Service, East US        [from your URL]
+  - Public base URL ........ root path, no prefix        [from your URL]
+  - Grid Hub address ....... 127.0.0.1:4444              [see note below]
+
+
+================================================================================
+PART B - WORK TO BE DONE
+================================================================================
+Phases are ordered; each depends on the one before.
+
+
+--------------------------------------------------------------------------
+PHASE 1 - REPRODUCE LOCALLY FIRST  (do this before anything else)
+--------------------------------------------------------------------------
+[ ] Run the provided Compose stack. It exercises the IDENTICAL Azure code
+    path - remote WebDriver, noVNC, no .env - on a laptop, where problems are
+    far cheaper to diagnose than in Azure.
+
+        docker compose -f deploy/docker-compose.yml up --build
+        # app  -> http://localhost:8000
+        # grid -> http://localhost:4444
+
+[ ] Scale it and confirm multiple people can record simultaneously:
+
+        docker compose -f deploy/docker-compose.yml up --scale chrome-node=5
+
+[ ] Record one workflow end-to-end through the noVNC panel and confirm the
+    actions are captured.
+
+[ ] SEND US THE LIVE-SESSION VNC URL. This unblocks item A1, the last
+    outstanding code change.
+
+
+--------------------------------------------------------------------------
+PHASE 2 - BUILD THE IMAGE   (deploy/Dockerfile)
+--------------------------------------------------------------------------
+[ ] KEEP THE python:3.12-slim BASE IMAGE.
+    This is not a preference. The code uses a backslash inside an f-string
+    expression (legal only from Python 3.12, PEP 701). On 3.11 or older the
+    app dies with a SyntaxError at import.
+
+[ ] DO NOT RE-ADD THE WINDOWS PACKAGES.
+    pywin32, pywinauto and comtypes now carry PEP 508 markers
+    (sys_platform == "win32") so pip skips them on Linux. Without those
+    markers the build HARD-FAILS - they have no Linux wheel and no Linux
+    source build.
+
+[ ] Verify .env is absent from the built image. .dockerignore excludes it,
+    but please confirm - see the gotchas section for why this matters more
+    than it appears.
+
+
+--------------------------------------------------------------------------
+PHASE 3 - STAND UP SELENIUM GRID
+--------------------------------------------------------------------------
+[ ] Deploy a Hub plus Chrome nodes based on selenium/node-chrome
+    (Xvfb + fluxbox + headed Chrome + VNC).
+
+[ ] Set --shm-size=2g on EVERY node.
+    /dev/shm defaults to 64 MB in Docker and Chrome crashes on heavy pages
+    without this. It surfaces as the same "Chrome instance exited" error.
+
+[ ] Set SE_NODE_MAX_SESSIONS=1.
+    Two sessions on one node share a single X display - users would see and
+    be able to click each other's browser.
+
+[ ] Set SE_SESSION_TIMEOUT=300.
+    People close tabs without stopping a recording. Without server-side
+    reaping, those dead sessions pin nodes forever until nobody can record.
+
+[ ] Enable VNC: SE_START_VNC=true, screen 1920x1080.
+
+[ ] CHANGE SE_VNC_PASSWORD from the placeholder in docker-compose.yml.
+
+
+--------------------------------------------------------------------------
+PHASE 4 - CONFIGURE THE APP
+--------------------------------------------------------------------------
+[ ] Set WEBSITES_PORT=8000. nginx listens there and fronts both Streamlit
+    and noVNC on the single public port App Service exposes.
+
+[ ] Set the platform variables listed in PART C.
+
+[ ] MIGRATE EVERY SECRET out of .env into App Service application settings.
+    IQEA_EXECUTION_TYPE overrides config/settings.ini, so modes can be
+    flipped from the portal without rebuilding the image.
+
+
+--------------------------------------------------------------------------
+PHASE 5 - WIRE THE REVERSE PROXY   (deploy/nginx.conf.template)
+--------------------------------------------------------------------------
+[ ] Confirm WebSocket upgrade works for BOTH backends.
+    Streamlit and noVNC are each WebSocket-based, and each fails SILENTLY
+    without the Upgrade / Connection headers:
+      - Streamlit hangs forever on "Please wait"
+      - noVNC shows a grey frame
+    No error appears in either case. This is the single most confusing
+    failure mode in the whole setup.
+
+[ ] Keep the Grid Hub off the public internet - only nginx should reach it.
+
+[ ] Long timeouts (3600s) are intentional - recording sessions sit idle
+    between user actions.
+
+
+--------------------------------------------------------------------------
+PHASE 6 - CAPACITY
+--------------------------------------------------------------------------
+[ ] App Service: provision a fixed node count sized to peak concurrent
+    recordings, and tell us that number so the UI can say so when reached.
+
+[ ] If you move to Container Apps: configure the KEDA "selenium-grid" scaler
+    against the Hub's pending-session queue.
+
+[ ] Budget ~1 GB RAM per concurrent Chrome, on top of the app container.
+
+
+--------------------------------------------------------------------------
+PHASE 7 - SECURE BEFORE WIDER RELEASE   (do not skip)
+--------------------------------------------------------------------------
+[ ] PUT AZURE AD / EASY AUTH IN FRONT OF THE APP.
+    Anyone who can reach /vnc/ gets a live, drivable browser sitting inside
+    your network. This must not be reachable beyond the team without
+    authentication.
+
+[ ] Confirm the VNC password was changed from the placeholder.
+
+[ ] Health check is wired to /_stcore/health with a 90s start period - the
+    app is slow to boot on first start.
+
+
+================================================================================
+PART C - ENVIRONMENT VARIABLE INVENTORY
+================================================================================
+Scanned from source. 32 variables total.
+
+--- PLATFORM (set by deploy/Dockerfile; override in the portal) ---------------
+  WEBSITES_PORT              8000
+  IQEA_EXECUTION_TYPE        azure
+  SELENIUM_REMOTE_URL        http://127.0.0.1:4444/wd/hub
+  GRID_UPSTREAM              127.0.0.1:4444
+  TESSERACT_CMD              /usr/bin/tesseract
+  IQEA_NOVNC_PATH            /vnc/
+
+  >> IMPORTANT: App Service sidecar containers SHARE a network namespace and
+  >> reach each other on 127.0.0.1 - NOT by container name. A Compose-style
+  >> "chrome:4444" fails there with "host not found in upstream" and nginx
+  >> refuses to start. deploy/entrypoint.sh renders this value into the nginx
+  >> config at container start, so changing it needs no rebuild.
+  >> (For docker-compose, both values use the service name "chrome" instead.)
+
+--- REQUIRED SECRETS (app is non-functional without these) --------------------
+  AZURE_OPENAI_API_KEY       secret   - read in 19 modules; most critical value
+  AZURE_OPENAI_ENDPOINT      secret   - read in 19 modules
+  AZURE_DEPLOYMENT_NAME      config   - model deployment name
+  AZURE_OPENAI_API_VERSION   config   - API version pin
+  OPENAI_API_KEY             secret   - self-healing + several utilities
+  OPENAI_API_BASE            secret   - self-healing + several utilities
+
+--- INTEGRATIONS (set only if the feature is in scope) ------------------------
+  GITLAB_ACCESS_TOKEN        secret   - script push / self-healing commits
+  GITLAB_REPO_NAME           config
+  GITLAB_BRANCH_NAME         config
+  JIRA_URL                   config   - test management integration
+  JIRA_USER                  secret
+  JIRA_TOKEN                 secret
+  API_TENANT_ID              config   - SwaggerHub / API validator
+  GEMINI_API_KEY             secret   - optional alternate model
+  GEMINI_ENDPOINT            config
+  AZURE_QUEUE_CONN_STRING    secret   - optional queue integration
+
+--- NOT YOUR CONCERN (runtime-set or Windows-only) ----------------------------
+  LOCUST_*                   8 vars set programmatically per performance run
+  PERFORMANCE_REPORT_DIR     derived from the output folder
+  ANDROID_HOME               Windows/mobile only - unused in the container
+  ANDROID_SDK_ROOT           Windows/mobile only - unused in the container
+  LOCALAPPDATA               Windows only - unused in the container
+
+
+================================================================================
+PART D - GOTCHAS THAT COST DAYS
+================================================================================
+Each of these fails quietly or misleadingly.
+
+  python:3.12+ base image
+      -> SyntaxError at import on 3.11 (backslash in f-string, PEP 701)
+
+  PYTHONPATH=/app
+      -> every "from config..." / "from utilities..." import fails; app never
+         starts
+
+  PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+      -> the native protobuf extension segfaults and SILENTLY kills the
+         Streamlit server
+
+  Grid Hub on 127.0.0.1, not a container name
+      -> App Service sidecars share a network namespace; "chrome:4444" gives
+         "host not found in upstream" and nginx refuses to start
+
+  --shm-size=2g on Chrome nodes
+      -> Chrome crashes on heavy pages; surfaces as the same
+         "session not created: Chrome instance exited" error
+
+  Upgrade / Connection headers in nginx
+      -> Streamlit hangs on "Please wait", noVNC shows a grey frame.
+         NO ERROR IS LOGGED in either case.
+
+  SE_SESSION_TIMEOUT
+      -> abandoned sessions pin nodes permanently until nobody can record
+
+  SE_NODE_MAX_SESSIONS=1
+      -> users share one X display and can see and click each other's browser
+
+  .env excluded from the image
+      -> several call sites use load_dotenv(override=True), where the FILE
+         beats real environment variables. A stray .env in the image would
+         silently override your App Service settings while the portal still
+         displayed the correct values. Extremely hard to diagnose.
+
+
+================================================================================
+SUMMARY
+================================================================================
+Application code : COMPLETE. Verified booting cleanly in local mode, and
+                   verified switching correctly to azure mode.
+Outstanding code : ONE line - the noVNC path, which needs item A1.
+Blocked on       : A1 (VNC URL) and A2 (concurrent session count).
+Best first step  : PHASE 1 - run the Compose stack locally. It validates the
+                   whole design and produces the answer to A1.
+
+================================================================================

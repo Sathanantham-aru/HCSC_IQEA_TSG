@@ -1,0 +1,145 @@
+# Selenium Grid for IQEA, on AKS, WITHOUT Helm or KEDA.
+#
+# Capacity is a FIXED number of Chrome pods (chrome-node.spec.replicas below).
+# There is no autoscaling here - raising concurrent-session capacity later
+# means editing that number and re-applying, or `kubectl scale`. That's the
+# accepted trade-off in place of KEDA for now (see AKS_GRID_HANDOVER.txt A5).
+#
+# Apply with:
+#   kubectl apply -f deploy/k8s/selenium-grid.yaml
+#
+# Before applying, DevOps needs to fill in:
+#   - <CHANGE-ME-VNC-PASSWORD>            a real password, not this placeholder
+#   - <RESERVED-PRIVATE-IP>               (optional) a static IP in the AKS
+#                                          subnet, so SELENIUM_REMOTE_URL never
+#                                          has to change after a redeploy
+#   - <SUBNET-NAME>                       (optional) only needed if the
+#                                          internal LB should NOT use the
+#                                          cluster's default subnet
+#   - chrome-node replicas: 5             the concurrent-recording ceiling
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: selenium-grid
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: selenium-vnc-password
+  namespace: selenium-grid
+type: Opaque
+stringData:
+  SE_VNC_PASSWORD: "<CHANGE-ME-VNC-PASSWORD>"
+
+---
+# ── Hub ──────────────────────────────────────────────────────────────────────
+# Bundles Router + Distributor + SessionMap + EventBus in one image, same as
+# docker-compose.yml's `chrome:` service. Nodes register with it over the
+# event-bus ports; the app talks WebDriver to it over 4444.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: selenium-hub
+  namespace: selenium-grid
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: selenium-hub}
+  template:
+    metadata:
+      labels: {app: selenium-hub}
+    spec:
+      containers:
+        - name: selenium-hub
+          image: selenium/hub:4.27
+          ports:
+            - {containerPort: 4442, name: event-pub}
+            - {containerPort: 4443, name: event-sub}
+            - {containerPort: 4444, name: webdriver}
+          env:
+            # Server-side backstop for the app's own quit_driver(): a tab
+            # closed without stopping a recording must not pin a node forever.
+            - {name: SE_SESSION_TIMEOUT, value: "300"}
+            - {name: SE_SESSION_REQUEST_TIMEOUT, value: "120"}
+          resources:
+            requests: {cpu: "250m", memory: "256Mi"}
+            limits: {cpu: "500m", memory: "512Mi"}
+          readinessProbe:
+            httpGet: {path: /status, port: 4444}
+            initialDelaySeconds: 10
+            periodSeconds: 5
+
+---
+# Internal only - this is a live, drivable browser control plane. Never give
+# it a public IP or public ingress.
+apiVersion: v1
+kind: Service
+metadata:
+  name: selenium-hub
+  namespace: selenium-grid
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+    # Uncomment and set only if the internal LB should not use the cluster's
+    # default subnet:
+    # service.beta.kubernetes.io/azure-load-balancer-internal-subnet: "<SUBNET-NAME>"
+spec:
+  type: LoadBalancer
+  # Optional: pin a static private IP reserved by DevOps so
+  # SELENIUM_REMOTE_URL / GRID_UPSTREAM never have to change after a redeploy.
+  # loadBalancerIP: <RESERVED-PRIVATE-IP>
+  selector: {app: selenium-hub}
+  ports:
+    - {name: event-pub, port: 4442, targetPort: 4442}
+    - {name: event-sub, port: 4443, targetPort: 4443}
+    - {name: webdriver, port: 4444, targetPort: 4444}
+
+---
+# ── Chrome nodes ─────────────────────────────────────────────────────────────
+# One pod = one concurrent recording session. SE_NODE_MAX_SESSIONS stays 1:
+# two sessions sharing one X display means users can see and click each
+# other's browser.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chrome-node
+  namespace: selenium-grid
+spec:
+  replicas: 5   # <- the concurrent-session ceiling. Edit + re-apply to change.
+  selector:
+    matchLabels: {app: chrome-node}
+  template:
+    metadata:
+      labels: {app: chrome-node}
+    spec:
+      containers:
+        - name: chrome-node
+          image: selenium/node-chrome:4.27
+          env:
+            - {name: SE_EVENT_BUS_HOST, value: "selenium-hub"}
+            - {name: SE_EVENT_BUS_PUBLISH_PORT, value: "4442"}
+            - {name: SE_EVENT_BUS_SUBSCRIBE_PORT, value: "4443"}
+            - {name: SE_NODE_MAX_SESSIONS, value: "1"}
+            - {name: SE_START_VNC, value: "true"}
+            - {name: SE_START_XVFB, value: "true"}
+            - {name: SE_VNC_NO_PASSWORD, value: "false"}
+            - name: SE_VNC_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: selenium-vnc-password, key: SE_VNC_PASSWORD}
+            - {name: SE_SCREEN_WIDTH, value: "1920"}
+            - {name: SE_SCREEN_HEIGHT, value: "1080"}
+          resources:
+            requests: {cpu: "1", memory: "2Gi"}
+            limits: {cpu: "1500m", memory: "2Gi"}
+          volumeMounts:
+            # Kubernetes has no --shm-size flag like Docker. Without this,
+            # /dev/shm defaults to 64Mi and Chrome crashes on heavy pages -
+            # surfaces as the same "session not created: Chrome instance
+            # exited" error seen on App Service.
+            - {name: dshm, mountPath: /dev/shm}
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
