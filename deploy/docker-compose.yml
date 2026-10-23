@@ -1,0 +1,164 @@
+services:
+
+  # ==========================================================
+  # SELENIUM HUB
+  # ==========================================================
+
+  selenium-hub:
+    image: ${SELENIUM_HUB_IMAGE:-selenium/hub:4.27}
+
+    container_name: ${SELENIUM_HUB_CONTAINER_NAME:-selenium-hub}
+
+    env_file:
+      - ../.env
+
+    environment:
+      SE_SESSION_TIMEOUT: "${SE_SESSION_TIMEOUT:-300}"
+      SE_SESSION_REQUEST_TIMEOUT: "${SE_SESSION_REQUEST_TIMEOUT:-120}"
+
+    ports:
+      - "${SELENIUM_HUB_PORT:-4444}:4444"
+
+    networks:
+      - iqea-network
+
+    restart: unless-stopped
+
+
+  # ==========================================================
+  # CHROME NODE
+  #
+  # Each Chrome node supports ONE Selenium session.
+  #
+  # GitLab:
+  #   docker compose -f deploy/docker-compose.yml \
+  #     up -d selenium-hub chrome-node --scale chrome-node=5
+  #
+  # IMPORTANT:
+  # Do NOT use container_name here.
+  # Compose needs generated names so scaling works.
+  # ==========================================================
+
+  chrome-node:
+    image: ${CHROME_NODE_IMAGE:-selenium/node-chrome:4.27}
+
+    shm_size: ${CHROME_SHM_SIZE:-2gb}
+
+    env_file:
+      - ../.env
+
+    depends_on:
+      - selenium-hub
+
+    environment:
+
+      # ------------------------------------------------------
+      # Selenium Event Bus
+      # ------------------------------------------------------
+
+      SE_EVENT_BUS_HOST: "${SE_EVENT_BUS_HOST:-selenium-hub}"
+
+      SE_EVENT_BUS_PUBLISH_PORT: "${SELENIUM_EVENT_BUS_PUBLISH_PORT:-4442}"
+
+      SE_EVENT_BUS_SUBSCRIBE_PORT: "${SELENIUM_EVENT_BUS_SUBSCRIBE_PORT:-4443}"
+
+
+      # ------------------------------------------------------
+      # ONE SESSION PER CHROME NODE
+      # ------------------------------------------------------
+
+      SE_NODE_MAX_SESSIONS: "${SE_NODE_MAX_SESSIONS:-1}"
+
+      SE_NODE_OVERRIDE_MAX_SESSIONS: "${SE_NODE_OVERRIDE_MAX_SESSIONS:-true}"
+
+
+      # ------------------------------------------------------
+      # VNC / noVNC
+      # ------------------------------------------------------
+
+      SE_START_VNC: "${SE_START_VNC:-true}"
+
+      SE_START_NO_VNC: "${SE_START_NO_VNC:-true}"
+
+      SE_VNC_NO_PASSWORD: "${SE_VNC_NO_PASSWORD:-true}"
+
+      SE_NO_VNC_PORT: "${SE_NO_VNC_PORT:-7900}"
+
+      SE_VNC_PORT: "${SE_VNC_PORT:-5900}"
+
+    networks:
+      - iqea-network
+
+    restart: unless-stopped
+
+
+  # ==========================================================
+  # IQEA APPLICATION
+  # ==========================================================
+
+  iqea:
+    image: ${IQEA_IMAGE:-iqea-satha-local:test}
+
+    env_file:
+      - ../.env
+
+    ports:
+      - "${IQEA_PORT:-8000}:8000"
+
+    environment:
+
+      # ------------------------------------------------------
+      # IQEA EXECUTION
+      # ------------------------------------------------------
+
+      IQEA_EXECUTION_TYPE: "${IQEA_EXECUTION_TYPE:-azure}"
+
+      TESSERACT_CMD: "${TESSERACT_CMD:-/usr/bin/tesseract}"
+
+      PYTHONPATH: "${PYTHONPATH:-/app}"
+
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: "${PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION:-python}"
+
+
+      # ------------------------------------------------------
+      # SELENIUM GRID
+      #
+      # IMPORTANT:
+      # IQEA runs in a separate container.
+      # Therefore localhost/127.0.0.1 is NOT Selenium Hub.
+      #
+      # Selenium Hub is reachable using:
+      #
+      #   selenium-hub:4444
+      # ------------------------------------------------------
+
+      SELENIUM_REMOTE_URL: "${SELENIUM_REMOTE_URL:-http://selenium-hub:4444/wd/hub}"
+
+      GRID_UPSTREAM: "${GRID_UPSTREAM:-selenium-hub:4444}"
+
+
+      # ------------------------------------------------------
+      # noVNC
+      # ------------------------------------------------------
+
+      IQEA_NOVNC_PATH: "${IQEA_NOVNC_PATH:-/vnc/}"
+
+      IQEA_NOVNC_PASSWORD: "${IQEA_NOVNC_PASSWORD:-}"
+
+    depends_on:
+      - selenium-hub
+
+    networks:
+      - iqea-network
+
+    restart: unless-stopped
+
+
+# ==========================================================
+# NETWORK
+# ==========================================================
+
+networks:
+
+  iqea-network:
+    driver: bridge

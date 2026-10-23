@@ -1,0 +1,58 @@
+# Docker's build context is NOT filtered by .gitignore. Without these rules
+# `COPY . .` would ship local secrets and gigabytes of virtualenv into the image.
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+# Critical: several call sites use load_dotenv(override=True), which makes a
+# .env file WIN over real environment variables. A .env inside the image would
+# silently override the Azure App Service settings.
+**/.env
+**/.env.*
+**/*.env
+config/auth_config.ini
+
+# ── Virtualenvs (gigabytes, and platform-specific Windows binaries) ───────────
+.venv/
+.venv1/
+venv/
+ENV/
+
+# ── VCS / IDE ─────────────────────────────────────────────────────────────────
+.git/
+.gitignore
+.idea/
+.vscode/
+.claude/
+
+# ── Python build artefacts ────────────────────────────────────────────────────
+# NOTE: a leading `**/` is required for anything that also appears in
+# subdirectories — in .dockerignore a bare `*` does not match across `/`.
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── Editor / crash leftovers found in this repo ───────────────────────────────
+# e.g. utilities/Utilities_Xpath.py.tmp.14096.f089a7995df1
+**/*.tmp.*
+**/*~
+**/* - Copy.*
+**/*copy.py
+**/*duplicate.py
+
+# ── Generated output — regenerated at runtime, not needed to build ────────────
+output/
+allure-report/
+allure-results/
+logfile
+*.log
+
+# ── Windows-only runtime bits that cannot work in the container ───────────────
+Input/chromedriver.exe
+desktop/output/
+desktop/__pycache__/
+
+# ── Docs ──────────────────────────────────────────────────────────────────────
+README.md
+*.md

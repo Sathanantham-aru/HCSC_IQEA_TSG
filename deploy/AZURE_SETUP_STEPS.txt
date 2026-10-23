@@ -1,0 +1,271 @@
+================================================================================
+IQEA - AZURE SETUP, STEP BY STEP
+================================================================================
+For: iqea-poc-cweseafae3a9bvgf.eastus-01.azurewebsites.net  (App Service, Linux,
+     East US)
+
+IMPORTANT SIMPLIFICATION
+------------------------
+Do NOT build a Selenium Grid (Hub + separate Node containers). That is what your
+DevOps team is struggling with, and a POC does not need it.
+
+Use ONE container: selenium/standalone-chrome. It bundles the hub, the node,
+Xvfb, a window manager, Chrome and noVNC in a single image:
+   port 4444 -> WebDriver
+   port 7900 -> noVNC (the live screen)
+No event bus, no node registration, no Grid topology. One sidecar, done.
+
+Trade-off: one concurrent recording session. Raise it later by moving to Azure
+Container Apps (see STEP 9). Get one working first.
+
+
+PREREQUISITES
+-------------
+[ ] Azure CLI installed and logged in:      az login
+[ ] Your resource group name:               az webapp list -o table
+[ ] App Service Plan must be Linux, and >= 2 GB RAM.
+    Chrome needs ~1 GB on top of the app. B1 (1.75 GB total) WILL run out of
+    memory. Use P0v3/P1v3 or S1 minimum.
+    Check:  az appservice plan list -o table
+
+You do NOT need Docker Desktop. Step 2 builds the image inside Azure.
+
+Throughout, replace:
+   <RG>    your resource group
+   <ACR>   a new container registry name (globally unique, lowercase, no dashes)
+   iqea-poc-cweseafae3a9bvgf   your app name (as it appears in `az webapp list`)
+
+
+================================================================================
+STEP 1 - CREATE A CONTAINER REGISTRY
+================================================================================
+az acr create --resource-group <RG> --name <ACR> --sku Basic --admin-enabled true
+
+Why: App Service pulls the app image from a registry. Basic tier is enough.
+--admin-enabled gives a username/password that App Service can use, which is the
+simplest auth for a POC.
+
+
+================================================================================
+STEP 2 - BUILD AND PUSH THE IMAGE (runs in Azure, no local Docker)
+================================================================================
+Run from the REPO ROOT (the folder containing IQEA.py):
+
+az acr build --registry <ACR> --image iqea:v1 --file deploy/Dockerfile .
+
+This uploads the build context, builds on Azure, and pushes the result.
+It takes 10-20 minutes the first time (large requirements.txt).
+
+WATCH FOR: if it fails during "pip install", read the error. The most likely
+cause is a package needing a Linux system library. Send me the error and I will
+add the apt package to deploy/Dockerfile.
+
+Note: .dockerignore keeps .env, .venv1/ and output/ out of the build, so the
+upload stays small and no secrets enter the image.
+
+
+================================================================================
+STEP 3 - POINT THE APP SERVICE AT THE IMAGE
+================================================================================
+Get the registry password first:
+
+az acr credential show --name <ACR> --query "passwords[0].value" -o tsv
+
+Then:
+
+az webapp config container set \
+  --name iqea-poc-cweseafae3a9bvgf --resource-group <RG> \
+  --docker-custom-image-name <ACR>.azurecr.io/iqea:v1 \
+  --docker-registry-server-url https://<ACR>.azurecr.io \
+  --docker-registry-server-user <ACR> \
+  --docker-registry-server-password <PASSWORD-FROM-ABOVE>
+
+(If your az version rejects those flag names, the newer equivalents are
+ --container-image-name / --container-registry-url / --container-registry-user /
+ --container-registry-password.)
+
+THIS IS THE BIG CHANGE: the app was previously deployed as SOURCE CODE from
+GitHub, where Azure ran pip install for you. It is now a container. That switch
+is required - code deployment cannot install tesseract or nginx, and cannot run
+sidecars. That is why OCR never worked in Azure.
+
+
+================================================================================
+STEP 4 - APPLICATION SETTINGS
+================================================================================
+az webapp config appsettings set \
+  --name iqea-poc-cweseafae3a9bvgf --resource-group <RG> --settings \
+  WEBSITES_PORT=8000 \
+  IQEA_EXECUTION_TYPE=azure \
+  SELENIUM_REMOTE_URL=http://127.0.0.1:4444/wd/hub \
+  GRID_UPSTREAM=127.0.0.1:4444 \
+  NOVNC_UPSTREAM=127.0.0.1:7900 \
+  IQEA_NOVNC_PATH=/vnc/ \
+  TESSERACT_CMD=/usr/bin/tesseract
+
+Why 127.0.0.1: App Service sidecar containers SHARE one network namespace, so
+they reach each other on loopback. This is the opposite of Docker Compose, where
+you must use the service name. Getting this wrong is the "[Errno 111] Connection
+refused" error your DevOps team hit.
+
+Now add the secrets (same command, or via Portal > Settings > Environment
+variables). These come from your local .env:
+
+  AZURE_OPENAI_API_KEY        (required)
+  AZURE_OPENAI_ENDPOINT       (required)
+  AZURE_OPENAI_API_VERSION    (required - value: 2023-05-15)
+  AZURE_DEPLOYMENT_NAME       (required - value: qepracticekey)
+  OPENAI_API_KEY              (required)
+  OPENAI_API_BASE             (required)
+  GITLAB_ACCESS_TOKEN, GITLAB_REPO_NAME, GITLAB_BRANCH_NAME   (if used)
+  JIRA_URL, JIRA_USER, JIRA_TOKEN                             (if used)
+  API_TENANT_ID, GEMINI_API_KEY, GEMINI_ENDPOINT              (if used)
+
+CRITICAL: the app does NOT read .env in Azure. A missing variable does not fail
+at startup - the feature just errors when someone uses it. The two API_VERSION /
+DEPLOYMENT_NAME ones above are exactly what broke Self Healing locally.
+
+
+================================================================================
+STEP 5 - ADD THE CHROME SIDECAR
+================================================================================
+Portal is more reliable than CLI here, and you can see what you configured.
+
+Azure Portal
+  -> your App Service (iqea-poc-...)
+  -> Deployment  >  Deployment Center
+  -> "Containers" tab
+  -> Add  >  Sidecar
+
+Fill in:
+  Name          : chrome
+  Image source  : Docker Hub  (public)
+  Image and tag : selenium/standalone-chrome:4.27
+  Port          : 4444
+
+Environment variables for the sidecar:
+  SE_START_XVFB        = true
+  SE_START_VNC         = true
+  SE_VNC_NO_PASSWORD   = true
+  SE_SCREEN_WIDTH      = 1920
+  SE_SCREEN_HEIGHT     = 1080
+  SE_NODE_MAX_SESSIONS = 1
+  SE_SESSION_TIMEOUT   = 300
+
+Then SAVE and restart the app.
+
+On SE_VNC_NO_PASSWORD=true: the noVNC screen would otherwise need a password
+passed in the page URL, which is worse than no password. Protect it with Azure
+Easy Auth instead (STEP 8) - real identity beats a shared string.
+
+On SE_SESSION_TIMEOUT=300: users close the browser tab without stopping a
+recording. Without this, that dead session holds Chrome forever and nobody else
+can record until a restart.
+
+WHY WE DO NOT SET --shm-size HERE: App Service does not expose that option.
+Normally Chrome crashes in containers because /dev/shm defaults to 64 MB. Our
+code already passes --disable-dev-shm-usage in azure mode, which is what makes
+this work without the flag. Nothing for you to do - just do not remove that
+flag from utilities/browser_factory.py.
+
+CLI alternative (newer az versions):
+  az webapp sitecontainers create --name iqea-poc-cweseafae3a9bvgf \
+    --resource-group <RG> --container-name chrome \
+    --image selenium/standalone-chrome:4.27 --target-port 4444
+
+
+================================================================================
+STEP 6 - VERIFY (do this before opening the UI)
+================================================================================
+6a. Is the app up?
+    curl -sS -o /dev/null -w "%{http_code}\n" \
+      https://iqea-poc-cweseafae3a9bvgf.eastus-01.azurewebsites.net/_stcore/health
+    Expect 200. First boot can take 2-3 minutes.
+
+6b. Watch the logs live:
+    az webapp log tail --name iqea-poc-cweseafae3a9bvgf --resource-group <RG>
+
+    You should see, from the entrypoint:
+       [entrypoint] nginx /session/ -> WebDriver at 127.0.0.1:4444
+       [entrypoint] nginx /vnc/     -> noVNC     at 127.0.0.1:7900
+       [env] execution_type=azure -> skipping .env; using process environment
+
+6c. THE KEY CHECK - run the built-in diagnostic inside the container:
+    az webapp ssh --name iqea-poc-cweseafae3a9bvgf --resource-group <RG>
+    then:
+       cd /app && python -m utilities.browser_factory
+
+    Expect:
+       execution_type        : azure
+       SELENIUM_REMOTE_URL   : http://127.0.0.1:4444/wd/hub
+       GRID REACHABLE        : yes
+       ready=True nodes=1 slots=1
+
+    If it says GRID REACHABLE: NO, the message tells you exactly what to change.
+    If slots=0, the Chrome container started but is not ready - check the sidecar
+    logs and that it has enough memory.
+
+6d. Is the OCR binary present?
+       tesseract --version        (inside the SSH session)
+
+
+================================================================================
+STEP 7 - TEST THE ACTUAL FEATURE
+================================================================================
+[ ] Open the app URL, go to IQEA
+[ ] Enter a URL, click "Open Browser"
+[ ] The "Live browser" panel should appear and show a real Chrome window
+[ ] Click inside that panel - you are driving the remote Chrome
+[ ] Click "Start Recording", interact, then "Stop Recording"
+[ ] Confirm the captured actions appear
+
+If the panel is blank/grey: that is the noVNC proxy. Check NOVNC_UPSTREAM is
+127.0.0.1:7900 (NOT 4444 - those are different ports and mixing them up gives a
+silent blank frame), and that nginx passes the WebSocket Upgrade header (it does,
+in deploy/nginx.conf.template - do not simplify those two proxy_set_header
+lines).
+
+Desktop recording will be greyed out with an explanation. That is intended -
+there is no Windows desktop in a Linux container.
+
+
+================================================================================
+STEP 8 - SECURE IT (before sharing the URL with anyone)
+================================================================================
+[ ] Portal > your App Service > Settings > Authentication > Add identity provider
+    -> Microsoft  ->  restrict to your tenant
+    Require authentication, unauthenticated requests: HTTP 302 redirect.
+
+WHY THIS MATTERS: /vnc/ is a live, drivable Chrome inside your Azure network.
+Anyone with the URL can browse as that container. Do not skip this.
+
+
+================================================================================
+STEP 9 - LATER: MORE THAN ONE CONCURRENT RECORDER
+================================================================================
+The setup above supports ONE recording session at a time. A second user gets
+"all browsers busy" rather than a crash.
+
+App Service cannot fix this well - sidecars are static, and multiple Chrome
+containers collide on the same loopback ports (4444/7900). You would have to
+hand-assign ports per sidecar, which stops scaling quickly.
+
+When you need real concurrency, move to Azure Container Apps:
+  - each replica gets its own network namespace (no port collisions)
+  - Selenium runs with INTERNAL ingress -> private DNS, not internet-facing
+  - set SELENIUM_REMOTE_URL=http://<grid-app-name>/wd/hub
+  - KEDA has a built-in selenium-grid scaler that adds nodes from the pending
+    session queue
+The application code needs NO changes - only those environment variables.
+
+
+================================================================================
+IF SOMETHING FAILS - SEND ME THIS
+================================================================================
+1. Output of:  python -m utilities.browser_factory     (inside the container)
+2. Last ~50 lines of:  az webapp log tail ...
+3. Which step number you were on
+
+The diagnostic in (1) answers most questions on its own.
+
+================================================================================
